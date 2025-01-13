@@ -1,0 +1,518 @@
+---
+title: "Air Quality Analysis in India"
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+date: "2024-04-28"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, message=FALSE, echo=FALSE, warning=FALSE}
+library(dplyr)
+library(lattice)
+library(corrplot)
+source("http://www.reuningscherer.net/s&ds230/Rfuncs/regJDRS.txt")
+library(gplots)
+library(car)
+library(leaps)
+
+```
+
+
+Let's take a look at our dataset. This dataset is an environmental pollution dataset collecting daily average pollution concentration results in different cities in India over the period of 2015-2020. India and other major countries with significant infrastructure and population have significant pollution. Although most people are aware of the issue of CO2 emissions, there are other harmful pollutants that also can have a significant impact on health and well being such as PM, O3, CO, NOx, SO2, etc...Particular Matter (PM) for example are microscopic particles suspended in the air that can get buried deep within the respiratory track. NOx and SO2 are important for creating aerosols and Ozone (O3) and NO undergo photochemical reactions important for regulating Ozone. However, in excess quantities, these compounds can have devastating health consequences both through direct and indirect means. This report aims to uncover quantitatively the severity of the pollution issues and understand where pollutants are concentrated the most in India and what type of pollutants are the most prevalent. This will provide a better understanding of the effects of different pollutants on the Air quality Index (AQI) and which factors might be the most important to look out for when determining air quality. 
+
+```{r, echo=FALSE}
+air_qual <- read.csv("city_day.csv")
+
+dim(air_qual)
+head(air_qual)
+names(air_qual)
+
+```
+
+
+We have a dimension of 29531 observations and 16 variables. Now let's see how many missing entries we have in each column.
+```{r, echo=FALSE}
+# Count the Number of NAs by column
+colSums(is.na(air_qual))
+
+```
+
+**Data Cleaning Portion**
+
+First, we want to remove any rows with NA in them. However before that, we want to drop the Benzene, Tuoluene, and Xylene columns as they are not as important as the other substances and have a lot of N/A values. 
+```{r, echo=FALSE}
+
+#Removes "Benzene", "Toluene", "Xylene " column
+air_qual <- air_qual[c(-12, -13, -14)]
+
+# omit all NAs in data frame
+air_qual <- na.omit(air_qual)
+
+# dim(air_qual)
+# head(air_qual)
+# names(air_qual)
+```
+
+Now as we can see, we have no more NAs in the dataset. 
+```{r, echo=FALSE}
+# Count the Number of NAs by column
+colSums(is.na(air_qual))
+
+```
+
+This has reduced the number of data entries significantly to around 14000 entries. Now, we notice that there's a bunch of cities listed in many different regions of India. What could be useful is if we categorize these cities into their different states as well as regions (north, south, east, west, and central). 
+
+Now, we can group by city, state, and region, and merge the data frame.
+
+```{r, echo=FALSE}
+
+lookup_table <- data.frame(
+  City = c("Aizawl", "Amaravati", "Amritsar", "Bengaluru", "Bhopal", "Brajrajnagar", "Chandigarh", "Chennai", 
+            "Coimbatore", "Delhi", "Gurugram", "Guwahati", "Hyderabad", "Jaipur", "Kochi", "Kolkata", "Mumbai", 
+            "Patna", "Shillong", "Talcher", "Thiruvananthapuram", "Visakhapatnam"),
+  State = c("Mizoram", "Andhra Pradesh", "Punjab", "Karnataka", "Madhya Pradesh", "Odisha", "Punjab", "Tamil Nadu", 
+            "Tamil Nadu", "Delhi", "Haryana", "Assam", "Telangana", "Rajasthan", "Kerala", "West Bengal", "Maharashtra", 
+            "Bihar", "Meghalaya", "Odisha", "Kerala", "Andhra Pradesh"),
+  Region = c("East", "South", "North", "South", "Central", "East", "North", "South", 
+             "South", "North", "North", "East", "South", "North", "South", "East", "West", 
+             "East", "East", "East", "South", "South")
+)
+
+
+air_qual <- merge(air_qual, lookup_table, by = "City", all.x = TRUE)
+
+```
+
+As we can see, we get the appropriate state and region matched to the correct city. 
+
+```{r, echo=FALSE}
+head(air_qual)
+
+```
+
+Now let's clean the dates a bit. First, we notice that the datatype of Date is a char rather than date. So let's make this change.
+
+```{r, echo=FALSE}
+
+air_qual$Date <- as.Date(air_qual$Date, format = "%Y-%m-%d")
+
+```
+Here are the refined dates:
+
+```{r, echo=FALSE}
+head(air_qual$Date)
+
+```
+
+This marks the end of the data cleaning portion.
+
+**NOTE:** The units for all pollutant variables in plots and other statistics will be in ug/m^3 and are continuous variables. AQI Index is a unitless but continuous variable and AQI bucket is a categorical variable that ranges from Severe to Satisfactory with 6 total classes. Below are all the variables being used for this project (though 'City', 'State' and 'Date' are not actually used in the results and are more for data cleaning and organization).
+
+```{r, echo=FALSE}
+
+names(air_qual)
+
+```
+
+**Plots**
+
+We first create a boxplot of all of the pollutant and over lay the means on top 
+of each pollutant. We show a log shifted version since it is difficult to read otherwise. Check Rmd for non-shifted plot.
+
+
+```{r, echo=FALSE, warning=FALSE}
+pollutants <- c( "PM2.5", "PM10", "NO", "NO2", 
+                "NOx", "NH3", "CO", "SO2", "O3")
+aqi <- c("AQI", "PM2.5", "PM10", "NO", "NO2", "NOx", "NH3", "CO", "SO2", "O3")
+
+mean <- sapply(air_qual[, pollutants], mean)
+
+color <- c("firebrick","maroon3", "lightblue", "lightsalmon", "springgreen2",
+           "pink", "slategray1", "darkmagenta", 
+           "aquamarine","navyblue", "wheat","palevioletred", "yellow2", 
+           "orange", "lightgreen","gray12",
+           "cyan", "plum", "slateblue1", "violet")
+
+# Box plot of Log Elements
+boxplot(log(air_qual[,pollutants]), main = "Log Boxplot of All Pollutants",
+        xlab = "Types of Gases", ylab = "Concentration (ug/m3)",col = color )
+points(log(mean), col = "red", pch = 19)
+text(x =c(1:9), y = log(mean) + .2, labels = round(log(mean),2))
+
+
+```
+```{r, eval=FALSE, echo=FALSE}
+
+#Boxplot of Elements
+boxplot(air_qual[,pollutants], main = "Boxplot of All Pollutants",
+        xlab = "Types of Gases", ylab = "Concentration (ug/m3)", col = "aquamarine")
+points(mean, col = "red", pch = 19)
+text(x =c(1:9), y = mean, labels = round(mean,2))
+
+
+```
+
+*All of the variables have many anomalies above and below each quartile. NO2 and O3 have the highest degree of anomalies below the lower quartile. There appears to be some differences between the mean of each variable. PM10 has a log shifted mean of 4.76 and CO with a log shifted mean of 0.05 have the greatest differences in mean.*
+
+
+Next we are interested in specific pollutants across different regions in India. Although there are many pollutants of interest, we will look at PM 2.5 specifically as it is known to be pretty detrimental to health and gets stuck deep within the respiratory track. Below is also a log shifted box plot to highlight the PM 2.5 levels by region.
+
+```{r, echo=FALSE}
+boxmean <- tapply(air_qual$PM2.5, air_qual$Region, mean)
+
+boxplot(log(air_qual$PM2.5) ~ air_qual$Region, main = "Log Boxplot of PM 2.5 by Region",
+        xlab = "Region", ylab = "Concentration (ug/m3)", col = "aquamarine")
+points(log(boxmean), col = "red", pch = 19)
+text(x =c(1:5), y = log(boxmean) + .2 , labels = round(log(boxmean),2))
+
+
+```
+
+```{r, eval=FALSE, echo=FALSE}
+
+boxplot(air_qual$PM2.5 ~ air_qual$Region, main = "Boxplot of PM 2.5 by Region",
+        xlab = "Region", ylab = "Concentration (ug/m3)", col = "aquamarine")
+points(boxmean, col = "red", pch = 19)
+text(x =c(1:5), y = boxmean + .2 , labels = round(boxmean,2))
+
+
+```
+
+Now, another thing we want to check is relationship between the pollutants. Let's take PM 2.5 and PM 10 for example. Although PM 2.5 is a subset of PM 10, we want to understand if high levels of PM 10 indicate high levels of PM 2.5 in India. This would indicate most of the PM 10 is actually PM 2.5. Below is a scatter plot comparing the two.
+
+
+```{r, echo=FALSE} 
+x <- seq(1,800)
+y <- seq(1,800)
+plot(air_qual$PM2.5 ~ air_qual$PM10, col = 'lightblue', pch=19,
+     main = "PM 2.5 vs PM 10 Concentrations in India", xlab ="PM 10 Conc. (ug/m3)", ylab = "PM 2.5 Conc. (ug/m3)")
+abline(x,y, col = "red")
+
+
+```
+
+*There is a positive linear relationship between the variables PM 2.5 and PM 10. On the head of the distribution there are some anomalies orientated on the higher values of PM 2.5, approximately 200 to 500. On the tail end there are some anomalies that appear with greater frequency after the PM 10 values of grater than 600. Overall, the distribution indicates a positive linear relationship, where anomalies occur on the head and tail end of the distribution when comparing it to the x=y fit.*
+
+
+Another relationship that is of interest is the photochemical reactions between O3 and NO. Thus, we want to understand if there is some relationship between the two. Below is a scatterplot of NO and 03.
+
+
+```{r, echo=FALSE} 
+
+
+
+plot(air_qual$NO ~ air_qual$O3, col = 'palevioletred', pch=19,
+     main = "NO and O3 Concentrations in India", xlab ="NO Conc. (ug/m3)", ylab = "O3 Conc. (ug/m3)")
+abline(x,y, col = "red")
+
+
+```
+
+*There does not appear to be a strong linear relationship between these variables as most of the distribution is clustered at the lower value of NO and the low to upper values of O3. Some of the data appears to be weakly distributed in a positive linear direction. It is difficult to see what type of relationship this is but maybe if we applied some type of transformation to the data, a relationship might be more pronounced.*
+
+
+From here, we want to see the distribution of data for PM 2.5. Below is a quantile plot for PM 2.5. Due to page limit, only the log shifted version is shown. However, the unshifted QQ plot indicates that the data is not normally distributed with significant deviations. 
+
+```{r, eval=FALSE, echo=FALSE}
+qqPlot(air_qual$PM2.5, pch = 19, col = "firebrick", 
+       main = "QQ Plot of PM 2.5", ylab = " PM 2.5", 
+       xlab = "Norm Quantiles")
+#*The quantile plot is poorly fitted as there is significant deviation on the tail end of the plot. The QQ plot indicates that the data is not normally distributed.*
+
+```
+
+
+
+Since we get a poor fit from the previous plot, we can do a log shifted QQ plot.
+
+```{r, echo=FALSE}
+qqPlot(log(air_qual$PM2.5), pch = 19, col = "red", 
+       main = "Normile Plot of Log PM 2.5", ylab = "Log PM 2.5", 
+       xlab = "Norm Quantiles")
+```
+
+*After a log transformation was performed the quantile plot of variable PM 2.5 has a much better fit and is mostly normal fit from x approximately -2.5 to approximately 4. There is slight deviation on the tail and and a greater degree of deviation on the head end as indicated by the displayed outliers. Overall however, the log transformation greatly improves the fit of the data.*
+
+
+We can further show the distribution of the PM 2.5 data through a histogram. Only a log-shifted histogram is shown due to page limit but the unshifted histogram highlights significantly right skewed data for PM 2.5. 
+
+```{r, eval=FALSE, echo=FALSE}
+hist(air_qual$PM2.5, pch = 19, col = "plum", main = "Histogram of PM 2.5 Concentrations", 
+       xlab = "Conc. (ug/m3)")
+
+#*The histogram displays significantly right skewed data for PM 2.5*
+
+```
+
+```{r, echo=FALSE}
+hist(log(air_qual$PM2.5), pch = 19, col = "maroon3", main = "Log Shifted Histogram of PM 2.5 Concentrations",
+     xlab = "Conc. (ug/m3)")
+
+```
+
+*After a log shift of PM 2.5 was plotted on the histogram the data appears mostly normal. The distribution lies between 1 and 7 with the majority of the data being distributed between approximated 3 and 5. There is a slight left skew along the upper curve of the normal distribution and some outliers that can't really been seen on the plot are actually on the far left but in general, it is more normally distributed.*
+
+
+**Basic Tests**
+                      
+Now, let's do some basic tests. First, let's do a t.test comparing the means of PM 2.5 and PM 10. This would allow us to see if PM 2.5 makes up a significant portion of PM 10 or not (as PM 2.5 is a subset of PM 10).
+
+```{r, echo=FALSE}
+t.test(air_qual$PM2.5, air_qual$PM10)
+```
+
+*Clearly from this test, we see that the p-value is very small which indicates the means are statistically significantly different from each other and thus there is a large portion of PM 10 that doesn't consist of PM 2.5.* 
+
+
+Now, let's check the correlation between each of the pollutants.
+
+```{r, echo=FALSE, warning=FALSE}
+pollutants <- c( "PM2.5", "PM10", "NO", "NO2", 
+                "NOx", "NH3", "CO", "SO2", "O3")
+gases <- air_qual[,pollutants]
+cor<- cor(gases)
+
+sigcorr <- cor.mtest(cor[,1:9], conf.level = 0.95)
+print("Correlation between pollutants")
+cor
+
+corrplot.mixed(cor, use = "pairwise.complete.obs",
+               lower.col = "black",
+               upper = "ellipse",
+               number.cex = 0.9,
+               tl.pos = "lt",
+               p.mat = sigcorr$p)
+```
+
+*The correlation matrix reveal some notable correlations. The highest correlation of 0.87 is observed between PM 2.5 and PM 10. This indicates a strong positive correlation between these two pollutants ie a increase in PM 2.5 will generally increase PM 10. The second highest correlation is 0.79, indicating a strong positive correlation between the two pollutants NO and NOx.The third highest and final correlation is 0.67 between NO2 and NOx. This indicates a moderate positive correlation between these two gases. All of these other relationships have a p-value of greater than 0.05 (which is why they are crossed out) and thus we reject the null hypothesis. ie there is no significant correlation between the two variables. Further analysis is needed to verify the correlation between the variables above.*
+
+**Bootstrap Correlations**
+
+Next, we want to check the bootstrap correlations between PM 2.5 and PM 10 (because they had the highest correlation) and compare it to the actual correlation.
+
+```{r, echo=FALSE}
+
+n <- length(air_qual$PM2.5)
+n_samp <-  10000   #number of samples
+
+corResults <- rep(NA, n_samp)
+
+
+for(i in 1:n_samp){
+  #get a sample with replacement
+  s <- sample(1:n, n, replace = T)
+  #store sample mean for this sample
+  fakeData <-  air_qual[s, ]
+ 
+  (corResults[i] <- cor(fakeData$PM2.5, fakeData$PM10))
+ 
+ 
+}
+
+
+(ci_r <- quantile(corResults, c(.025, .975)))
+
+
+hist(corResults, col = "blue", main = "Bootstrapped Correlations", xlab = "Sample Correlation", breaks = 50)
+
+
+abline(v = ci_r, lwd = 3, col = "red")
+abline(v = cor.test(air_qual$PM2.5, air_qual$PM10)$conf.int, lwd = 3, col = "green", lty = 2)
+legend("topleft", c("Theoretical CI","Boot CI"), lwd = 3, col = c("green","red"), lty = c(2, 1))
+
+
+
+```
+
+*When doing the bootstrap correlations, we can see that it more or less follows a normal distribution. When comparing the theoretical vs bootstrap CI, we notice that the theoretical CI is noticeably smaller than the bootstrap CI and narrows in around the 0.87 to 0.875 range.*
+
+
+
+**Permutation Test**
+                
+Next, let's do a permutation test to understand the statistical difference in correlations between PM 10 and AQI Index. This might provide us some insight into the overall affect of particulate matter (thus using PM 10 instead of just 2.5) on AQI.
+                
+```{r, echo=FALSE}
+myCor <- function(x, y){
+  #make the scatterplot
+  plot(x, y, pch = 19, col = "red", xlab="PM 10 Levels", ylab= "AQI Index")
+  #add text in the margin reporting the sample correlation)
+  mtext(paste("Sample Correlation =", round(cor(x, y), 3)), cex = 1.2)
+  abline(c(1,800),c(1,800), col = "blue")
+}
+
+permCor <- function(x, y, n_samp = 10000, plotit = T){
+   corResults <- rep(NA, n_samp)
+   for (i in 1:n_samp){
+      corResults[i] <- cor(x, sample(y))
+   }
+   
+   pval <- mean(abs(corResults) >= abs(cor(x, y)))
+   
+   if (plotit == T){
+      #Make histogram of permuted correlations
+      hist(corResults, col = "yellow", main = "", xlab = "Correlations", breaks = 50,
+           xlim = range(corResults,cor(x,y)))
+      mtext("Permuted Sample Correlations", cex = 1.2, line = 1)
+      mtext(paste0("Permuted P-value = ", round(pval, 4),", Calculated P-value = ", round(cor.test(x, y)$p.value, 4)), cex = 0.8, line = 0)
+      abline(v = cor(x, y), col = "blue", lwd = 3)
+      text(cor(x,y)*0.95, 0, paste("Actual Correlation =", round(cor(x, y), 2)), srt = 90, adj = 0)
+   }
+   if (plotit == F){
+      return(round(pval, 5))
+   }  
+}
+
+myCor(air_qual$PM10, air_qual$AQI)
+permCor(air_qual$PM10, air_qual$AQI)
+```
+
+*Based on the above plots, there clearly is a positive linear relationship between PM 10 and AQI Index and fits the linear line fairly well. Additionally, with the permutation test, we can see that the calculated correlation is fairly high and positive but most of the data is to the far left which indicates some outliers in the data. However, based on the true correlation and scatter plot, it can be reasonably assumed that a positive correlation exists between PM 10 and AQI Index and thus is a strong contributor to determining the AQI Index.*
+
+
+**Multiple Regression**
+
+Now we get to multiple regression. We will do a backwards stepwise regression, initially including all relevant factors and then removing them one by one by largest p-value (starting with the interaction terms first) and re-fitting the model until all factors are significant. To keep the model more readable and not overly complicated, AQI_bucket and City were not added as there would be too many categorical variable classes (over 40-50 different coefficients). The interaction terms chosen were based on either potential atmospheric reactions that take place or compounds of high similarity. For this regression, we will be using an alpha of 0.05.
+
+Here is the initial model:
+```{r}
+
+multireg <- lm(AQI ~ PM2.5 + PM10 + NO + NO2 + NOx + NH3 + CO + SO2 + O3 + Region + PM2.5*PM10 + NO*NOx + NO2*NOx + NO*O3, data = air_qual)
+
+```
+
+
+After performing backwards regression, we end up with the final model below:
+
+```{r, echo=FALSE}
+
+multireg <- lm(AQI ~ PM2.5 + PM10 + NO + NO2 + NOx + NH3 + CO + SO2 + O3 + PM2.5*PM10 + NO*NOx + NO2*NOx + NO*O3, data = air_qual)
+
+summary(multireg)
+
+myResPlots2(multireg)
+
+```
+
+*The final model results in all variables having a p-value less than 0.05. In many cases this p-value is extremely small and therefore all of the remaining variables are fairly significant predictors of AQI. All the interaction terms also prove to be significant. We can however see that the residuals are not normally distributed and further, there is not too much evidence of heteroskedasticity. Furthermore, we have an Rsq value of around 0.91 which indicates a really strong fit of the model as 91% of the variance can be described by the different predictors in the model. Additionally, the directions of the predictors all seem to be mostly negative except for PM 2.5 and CO and most of the coefficients reside in the -1 to 1 range. However, there is indication of many outliers as seen by the bounds in the residual plot. As a result, we could apply a transformation here to better fit the values and reduce outliers.*
+
+Below, we perform a BoxCox transformation and obtain the adjusted lambda value.
+
+```{r, fig.show='hide', echo=FALSE, results='hide'}
+
+trans1 <- boxCox(multireg)
+
+```
+```{r, echo=FALSE}
+
+trans1$x[which.max(trans1$y)]
+
+```
+
+*The proposed lambda transformation value is around 0.343. Let's go ahead and apply this to the data.*
+
+```{r, echo=FALSE}
+
+
+transAQI <- air_qual$AQI^(trans1$x[which.max(trans1$y)])
+
+#transAQI <- log(air_qual$AQI)
+
+
+m2 <- lm(transAQI ~ PM2.5 + PM10 + NO + NO2 + NOx + NH3 + CO + SO2 + O3 + PM2.5*PM10 + NO*NOx + NO2*NOx + NO*O3, data = air_qual)
+
+#summary(m2)
+myResPlots2(m2)
+
+
+
+```
+
+*As seen above in the quantile plot, the residuals are still not normal but as seen in the residual plot, there seems to be significantly less outliers as there were before, indicating that the transformation was slightly helpful. The Rsq value stayed roughly the same indicating that the fit of the model didn't change significantly.*
+
+
+**ANOVA Two Way**
+              
+
+Now, when doing ANOVA, we want to understand how AQI Index is affected by different regions of India as well as their matching AQI buckets. This might indicate that certain regions of India are significantly worse in pollutants than other areas or if it is relatively the same across regions. It will further highlight how well the qualitative buckets describe overall pollution levels. 
+
+
+First however, since AQI Bucket is split so sparsely into the different groups, Two-Way ANOVA will not work and thus we have to recode it to include less buckets and group certain buckets together. 
+
+```{r, echo=FALSE, warning=FALSE}
+
+air_qual$newBucket <- recode(air_qual$AQI_Bucket, " 'Satisfactory' = 'Good'; 'Good' = 'Good'; 'Moderate' = 'Moderate';  'Poor' = 'Poor'; 'Very Poor' = 'Poor'; 'Severe' = 'Poor'")
+
+unique(air_qual$AQI_Bucket)
+
+```
+
+Now, we will fit the two-way ANOVA model:
+
+```{r, echo=FALSE}
+AQaov1 <- aov(AQI ~  Region + newBucket + Region*newBucket, data = air_qual)
+
+Anova(AQaov1, type ='III')
+
+```
+
+*When looking at the model, it looks like all terms are significant and thus we don't have to remove any terms from the model.*
+
+
+
+```{r, echo=FALSE}
+
+myResPlots2(AQaov1)
+
+
+```
+
+
+*Based on the above results, the ANOVA residuals are not normally distributed at all and there is significant evidence of heterosekdasticity.This indicates that the ANOVA might need a transformation for a better fit.* 
+
+
+Let's run Tukey to better understand our ANOVA results. Due to page limit, the Tukey results couldn't be displayed. However, check the Rmd for the full results. Below is a summary of the results.
+
+
+```{r, eval=FALSE, echo=FALSE}
+
+TukeyHSD(AQaov1)
+
+```
+
+
+```{r, eval=FALSE, echo=FALSE}
+
+par(mar=c(5, 11, 4, 1))
+plot(TukeyHSD(AQaov1), las = 1)
+
+
+```
+
+*The Tukey results show that most factors are significant but many include 0 in their CIs. For example, for the single region interactions, West-South includes 0 and thus we reject the null hypothesis in that case. This is the only such case for single region interactions. However, when looking at the double region-bucket interactions, it is clear that there are more insignificant interactions here such as West:Good-East:Good, South:Good-North:Good, South:Moderate-Central:Moderate, etc...*
+
+Let's further look at the interaction plot.
+
+```{r, echo=FALSE}
+
+interaction.plot(air_qual$newBucket, air_qual$Region, air_qual$AQI, type = 'b', lwd = 3, col = c('red','blue','black'), main = "Interaction Plot of Region and AQI classes", 
+                 xlab = "Air Quality",
+                 ylab = "Mean of Air Quality")
+
+
+```
+
+*Based on the interaction plot, we can see that there are significant crossing lines which signals that the interactions between Regions and AQI classes are significant. Furthermore, the above plot also suggests an overall effect due to AQI Class.*
+
+
+**Concluding Remarks**
+
+*To conclude, this project examined the air quality levels in India from 2015-2020 to understand the effects of different pollutants on the air quality in different regions of India. We compared different pollutants by region and compared different pollutants with each other such as PM 2.5 vs PM 10 and NO vs O3, both highlighting a relatively positive relationship with each other. We further do a correlation test to understand the correlations between different pollutants (to understand if some pollutants are related to others). Most of the correlations were deemed not significant (though many showed correlations above 0.3) but significant correlations were PM 2.5-PM10, NO-NOx, and NO2-NOx. Of particular interest was the correlation between PM 2.5 and PM 10. When conducting the bootstrap correlations, we achieved a fairly normal distribution with the theoretical CI closing in on the 0.87-0.875 range.The permutation test highlights a similar story with the correlation level between PM 10 and AQI but indicates potential outliers as most of the permuted results lied near the 0-0.2 range. When running backwards stepwise regression, we end up with most of the factors being significant with 3 interaction terms, indicating that the interactions between similar compounds and potential chemical reactions are highly relevant and significant. Finally, when running two-way ANOVA in relation to AQI, region and AQI bucket seems to be significant when explaining the differences in pollution concentrations and air quality levels between different regions in India. This was to be expected as the AQI buckets are based on the AQI levels and certain regions of India that are densely populated (i.e Mumbai, Delhi, and Chennai) are much more polluted than sparsely populated regions such as Chitoor and Azizwal. We hope that these results are helpful in further understanding the most contributing factors to air pollution in India and potentially targeting specific pollutants and chemical reactions when developing solutions to air pollution.*
+
+
